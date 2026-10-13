@@ -1993,32 +1993,36 @@ async function summarizeActivePage() {
       // engines report failure mid-stream, after the start handshake
       // already resolved, so retrying only the start call would never
       // reach the next engine.
-      const result = await summarizeWithEngineFallback(settings, summarizeArgs, {
-        tab,
-        jobId,
-        promptsCacheKey,
-        persistStream: async (streamId) => {
-          const activeJobState = await saveViewStateIfJobMatches(
-            tab.id,
-            jobId,
-            {
-              view: "summaryView",
-              subview: "summarizing",
-              url: tab.url,
-              streamId,
-              promptsCacheKey,
-              summaryLanguage: settings.summaryLanguage,
-              translationEngine: settings.translationEngine,
-            },
-            "summarizing",
-          );
-          if (!activeJobState) {
-            const latestState = await loadViewState(tab.id);
-            if (latestState?.jobId !== jobId) return "superseded";
-          }
-          return "done";
+      const result = await summarizeWithEngineFallback(
+        settings,
+        summarizeArgs,
+        {
+          tab,
+          jobId,
+          promptsCacheKey,
+          persistStream: async (streamId) => {
+            const activeJobState = await saveViewStateIfJobMatches(
+              tab.id,
+              jobId,
+              {
+                view: "summaryView",
+                subview: "summarizing",
+                url: tab.url,
+                streamId,
+                promptsCacheKey,
+                summaryLanguage: settings.summaryLanguage,
+                translationEngine: settings.translationEngine,
+              },
+              "summarizing",
+            );
+            if (!activeJobState) {
+              const latestState = await loadViewState(tab.id);
+              if (latestState?.jobId !== jobId) return "superseded";
+            }
+            return "done";
+          },
         },
-      });
+      );
       if (result !== "done") return;
     }
 

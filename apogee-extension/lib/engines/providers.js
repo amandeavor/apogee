@@ -469,9 +469,10 @@ export function providerNeedsKey(type, settings) {
 
 export function resolveEngineChain(settings, chain) {
   const preferred = getProviderType(settings);
-  const ordered = Array.isArray(chain) && chain.length > 0
-    ? chain
-    : [preferred, ...Object.values(PROVIDERS).filter((t) => t !== preferred)];
+  const ordered =
+    Array.isArray(chain) && chain.length > 0
+      ? chain
+      : [preferred, ...Object.values(PROVIDERS).filter((t) => t !== preferred)];
   const seen = new Set();
   const result = [];
   for (const type of ordered) {
@@ -503,7 +504,10 @@ export async function runWithEngineFallback(settings, chain, runFn, opts = {}) {
   const errors = [];
   for (const [index, type] of types.entries()) {
     try {
-      const provider = getProviderForType(type, { ...settings, provider: type });
+      const provider = getProviderForType(type, {
+        ...settings,
+        provider: type,
+      });
       const result = await runFn(type, provider, index);
       return { type, result, errors };
     } catch (err) {
