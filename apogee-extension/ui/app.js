@@ -8,6 +8,7 @@ if (
 
 import {
   getProvider,
+  runWithEngineFallback,
   getProviderType,
   getModelForSettings,
   attachToStream,
@@ -1598,6 +1599,59 @@ function renderSummaryError(error) {
   renderError(summaryText, toUserMessage(error));
 }
 
+// Last-resort output (#415): every engine failed, so show the extracted
+// page text instead of leaving the run empty.
+function renderExtractedTextFallback(target, fallbackText) {
+  target.textContent = "";
+  const note = document.createElement("p");
+  note.className = "error-message";
+  note.textContent =
+    "All summary engines failed, showing the extracted page text instead.";
+  target.appendChild(note);
+  const body = document.createElement("p");
+  body.textContent = fallbackText || "No readable text was extracted.";
+  target.appendChild(body);
+  announce("All engines failed. Showing extracted text.");
+}
+
+// Shared summarize attempt for the page and custom-content jobs (#415):
+// start each engine in chain order and consume its stream. persistStream
+// saves the job's per-attempt state and returns "superseded" when a newer
+// job took over, which ends this job silently instead of falling back.
+// Resolves "done" on success and "fallback" once extracted text is shown.
+async function summarizeWithEngineFallback(
+  settings,
+  summarizeArgs,
+  { tab, jobId, promptsCacheKey, persistStream },
+) {
+  const outcome = await runWithEngineFallback(
+    settings,
+    undefined,
+    async (type, engine) => {
+      setLoadingIndicator(summaryText, randomSummarizeVerb());
+      const { streamId, stream } = await engine.summarize(summarizeArgs);
+      if ((await persistStream(streamId)) === "superseded") {
+        cancelStream(streamId);
+        return "superseded";
+      }
+      showCancelSummarizeButton(streamId);
+      try {
+        await consumeSummaryStream(stream, { tab, promptsCacheKey, jobId });
+      } finally {
+        hideCancelSummarizeButton();
+      }
+      return "done";
+    },
+    { content: summarizeArgs.content },
+  );
+  if (outcome.result === "superseded") return "superseded";
+  if (outcome.type === "extracted-text") {
+    renderExtractedTextFallback(summaryText, outcome.result.fallbackText);
+    return "fallback";
+  }
+  return "done";
+}
+
 async function returnHomeAfterCancel(tabId, jobId = null) {
   const state = jobId
     ? await saveViewStateIfJobMatches(
@@ -1850,7 +1904,6 @@ async function summarizeActivePage() {
       promptsCacheKey: null,
     });
     const settings = await getSettings();
-    const provider = getProvider(settings);
     const model = getModelForSettings(settings);
     currentSummaryLanguage = settings.summaryLanguage;
     currentTranslationEngine = settings.translationEngine;
@@ -1897,8 +1950,6 @@ async function summarizeActivePage() {
       tabId: tab.id,
     };
 
-    let streamId, stream;
-
     if (pageData.isPdf) {
       // getPageData already filled the PDF text on a cache hit; extract
       // only when it is still missing (#177).
@@ -1924,57 +1975,53 @@ async function summarizeActivePage() {
         }
       }
       pageData.content = pdfContent;
-      setLoadingIndicator(summaryText, randomSummarizeVerb());
-      ({ streamId, stream } = await provider.summarize({
-        title: pageData.title,
-        url: pageData.url,
-        content: pdfContent,
-        mode: settings.responseFormat,
-        language: settings.summaryLanguage,
-        translationEngine: settings.translationEngine,
-        focusKeyword,
-        finalize,
-        onStats: (rate) => setTokensPerSecBadge(tokensPerSecBadgeSummary, rate),
-      }));
-    } else {
-      ({ streamId, stream } = await provider.summarize({
+    }
+    {
+      const summarizeArgs = {
         title: pageData.title,
         url: pageData.url,
         content: pageData.content,
         mode: settings.responseFormat,
-        type: pageData.type,
+        type: pageData.isPdf ? undefined : pageData.type,
         language: settings.summaryLanguage,
         translationEngine: settings.translationEngine,
         focusKeyword,
         finalize,
         onStats: (rate) => setTokensPerSecBadge(tokensPerSecBadgeSummary, rate),
-      }));
-    }
-
-    const activeJobState = await saveViewStateIfJobMatches(
-      tab.id,
-      jobId,
-      {
-        view: "summaryView",
-        subview: "summarizing",
-        url: tab.url,
-        streamId,
+      };
+      // The whole attempt runs inside the fallback (#415): local HTTP
+      // engines report failure mid-stream, after the start handshake
+      // already resolved, so retrying only the start call would never
+      // reach the next engine.
+      const result = await summarizeWithEngineFallback(settings, summarizeArgs, {
+        tab,
+        jobId,
         promptsCacheKey,
-        summaryLanguage: settings.summaryLanguage,
-        translationEngine: settings.translationEngine,
-      },
-      "summarizing",
-    );
-    if (!activeJobState) {
-      const latestState = await loadViewState(tab.id);
-      if (latestState?.jobId !== jobId) {
-        cancelStream(streamId);
-        return;
-      }
+        persistStream: async (streamId) => {
+          const activeJobState = await saveViewStateIfJobMatches(
+            tab.id,
+            jobId,
+            {
+              view: "summaryView",
+              subview: "summarizing",
+              url: tab.url,
+              streamId,
+              promptsCacheKey,
+              summaryLanguage: settings.summaryLanguage,
+              translationEngine: settings.translationEngine,
+            },
+            "summarizing",
+          );
+          if (!activeJobState) {
+            const latestState = await loadViewState(tab.id);
+            if (latestState?.jobId !== jobId) return "superseded";
+          }
+          return "done";
+        },
+      });
+      if (result !== "done") return;
     }
-    showCancelSummarizeButton(streamId);
 
-    await consumeSummaryStream(stream, { tab, promptsCacheKey, jobId });
     announce("Summary ready.");
   } catch (error) {
     if (error instanceof StreamCancelledError) {
@@ -2071,13 +2118,12 @@ async function submitQuestion(question) {
     currentPageData = pageData;
 
     const settings = await getSettings();
-    const provider = getProvider(settings);
     const content = pageData.content || currentSummaryText;
     if (!content) {
       throw new Error("Could not extract enough page content to answer.");
     }
 
-    const { streamId, stream } = await provider.ask({
+    const askArgs = {
       title: pageData.title,
       url: pageData.url,
       content,
@@ -2085,18 +2131,34 @@ async function submitQuestion(question) {
       language: settings.summaryLanguage,
       translationEngine: settings.translationEngine,
       onStats: (rate) => setTokensPerSecBadge(tokensPerSecBadgeAsk, rate),
-    });
-
-    await saveViewState(tab.id, {
-      view: "summaryView",
-      subview: "answer",
-      url: tab.url,
-      streamId,
-      question: trimmed,
-    });
-    showCancelAskButton(streamId);
-
-    await consumeAnswerStream(stream, { tab, question: trimmed });
+    };
+    const asked = await runWithEngineFallback(
+      settings,
+      undefined,
+      async (type, engine) => {
+        showAnswerContext(trimmed);
+        const { streamId, stream } = await engine.ask(askArgs);
+        await saveViewState(tab.id, {
+          view: "summaryView",
+          subview: "answer",
+          url: tab.url,
+          streamId,
+          question: trimmed,
+        });
+        showCancelAskButton(streamId);
+        try {
+          await consumeAnswerStream(stream, { tab, question: trimmed });
+        } finally {
+          hideCancelAskButton();
+        }
+        return "done";
+      },
+      { content },
+    );
+    if (asked.type === "extracted-text") {
+      renderExtractedTextFallback(answerBox, asked.result.fallbackText);
+      return;
+    }
   } catch (error) {
     if (error instanceof StreamCancelledError) {
       returnToAskAfterCancel(activeTabId);
@@ -2624,7 +2686,6 @@ async function summarizeCustomContent(title, content, url = "") {
       currentWindow: true,
     });
     const settings = await getSettings();
-    const provider = getProvider(settings);
     const model = getModelForSettings(settings);
     currentSummaryLanguage = settings.summaryLanguage;
     currentTranslationEngine = settings.translationEngine;
@@ -2637,7 +2698,7 @@ async function summarizeCustomContent(title, content, url = "") {
       model,
     );
 
-    const { streamId, stream } = await provider.summarize({
+    const customArgs = {
       title,
       url: sourceUrl,
       content,
@@ -2654,24 +2715,27 @@ async function summarizeCustomContent(title, content, url = "") {
         language: settings.summaryLanguage,
         translationEngine: settings.translationEngine,
       },
+    };
+    await summarizeWithEngineFallback(settings, customArgs, {
+      tab,
+      jobId,
+      promptsCacheKey,
+      persistStream: async (streamId) => {
+        if (tab?.id) {
+          await saveViewState(tab.id, {
+            view: "summaryView",
+            subview: "summarizing",
+            url: tab.url,
+            streamId,
+            jobId,
+            summaryText: "",
+            timeSaved: timeSavedInputsFor({ type: "article", content }),
+            promptsCacheKey,
+          });
+        }
+        return "done";
+      },
     });
-
-    activeSummarizeStreamId = streamId;
-    if (tab?.id) {
-      await saveViewState(tab.id, {
-        view: "summaryView",
-        subview: "summarizing",
-        url: tab.url,
-        streamId,
-        jobId,
-        summaryText: "",
-        timeSaved: timeSavedInputsFor({ type: "article", content }),
-        promptsCacheKey,
-      });
-    }
-    showCancelSummarizeButton(streamId);
-
-    await consumeSummaryStream(stream, { tab, promptsCacheKey, jobId });
   } catch (error) {
     if (error instanceof StreamCancelledError) {
       if (activeTabId) returnHomeAfterCancel(activeTabId, jobId);

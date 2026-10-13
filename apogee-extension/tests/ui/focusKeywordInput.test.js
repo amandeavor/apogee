@@ -185,12 +185,31 @@ test("summarizeActivePage gates the focus keyword on page-type support (#319)", 
   const gateIdx = body.indexOf("getGatedFocusKeyword(pageData");
   assert.ok(gateIdx !== -1, "gated helper used in summarizeActivePage");
   const cacheIdx = body.indexOf("getSummaryCacheKeys(");
-  const summarizeIdx = body.indexOf("provider.summarize({");
+  const summarizeIdx = body.indexOf("summarizeWithEngineFallback(");
   assert.ok(cacheIdx > gateIdx, "cache keys computed after the gate");
   assert.ok(summarizeIdx > gateIdx, "summarize job sent after the gate");
 
+  // The shared helper sends the job; the gated keyword must reach the
+  // engine call through the args it receives.
+  const helperStart = appCode.indexOf(
+    "async function summarizeWithEngineFallback(",
+  );
+  assert.ok(helperStart !== -1, "summarizeWithEngineFallback helper found");
+  const helperBody = appCode.slice(helperStart, helperStart + 2000);
+  assert.ok(
+    helperBody.includes("engine.summarize(summarizeArgs)"),
+    "helper sends summarizeArgs to the engine",
+  );
+
   const cacheWindow = body.slice(cacheIdx, cacheIdx + 300);
   assert.ok(cacheWindow.includes("focusKeyword"), "gated focusKeyword used");
+
+  const argsIdx = body.indexOf("const summarizeArgs = {");
+  assert.ok(argsIdx > gateIdx, "summarize args built after the gate");
+  assert.ok(
+    body.slice(argsIdx, argsIdx + 800).includes("focusKeyword"),
+    "gated focusKeyword rides in the summarize args",
+  );
 });
 
 test("opening on a new page clears a leftover focus keyword (#413)", () => {
