@@ -489,10 +489,7 @@ function startSuggestedQuestionsBg(
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.settings) {
-    renderEffectiveConfig(
-      effectiveConfigList,
-      getRedactedSettings(changes.settings.newValue),
-    );
+    refreshEffectiveConfigView(changes.settings.newValue);
   }
   if (!currentPromptsCacheKey) return;
   const change = changes[currentPromptsCacheKey];
@@ -731,6 +728,12 @@ async function applySettingsToUI(settings) {
 
   updateWebgpuWarning(isWebllm).catch((err) => console.error(err));
   updatePrivacyAuditUI().catch((err) => console.error(err));
+  refreshEffectiveConfigView(settings);
+}
+
+// Effective-config card (#416): one refresh path for initial apply and
+// storage updates, so the view cannot lag behind the stored setup.
+function refreshEffectiveConfigView(settings) {
   renderEffectiveConfig(effectiveConfigList, getRedactedSettings(settings));
 }
 

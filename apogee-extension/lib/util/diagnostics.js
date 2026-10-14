@@ -58,15 +58,24 @@ export function getRedactedSettings(settings) {
   });
 }
 
+// Shared extra-fields pass for both report shapes: skip empties, redact
+// the rest. Escaping stays at the format site (Markdown only).
+function redactedExtraEntries(extra) {
+  const entries = [];
+  for (const [key, value] of Object.entries(extra)) {
+    if (value === undefined || value === null || value === "") continue;
+    entries.push([key, redactExtra(key, value)]);
+  }
+  return entries;
+}
+
 // Settings block for the top of a report, so a copy says which config
 // produced the behaviour. Defaults are marked.
 export function formatDiagnosticSettings(settings, extra = {}) {
   const lines = ["--- apogee diagnostics ---"];
 
-  for (const [key, fallback] of Object.entries(extra)) {
-    if (fallback !== undefined && fallback !== null && fallback !== "") {
-      lines.push(`${key}: ${redactExtra(key, fallback)}`);
-    }
+  for (const [key, shown] of redactedExtraEntries(extra)) {
+    lines.push(`${key}: ${shown}`);
   }
 
   for (const { key, value, isDefault } of getRedactedSettings(settings)) {
@@ -82,11 +91,9 @@ export function formatDiagnosticSettings(settings, extra = {}) {
 export function formatDiagnosticsMarkdown(settings, extra = {}, logs = []) {
   const rows = [];
 
-  for (const [key, value] of Object.entries(extra)) {
-    if (value !== undefined && value !== null && value !== "") {
-      const shown = escapeMarkdownTableCell(redactExtra(key, value));
-      rows.push(`| ${escapeMarkdownTableCell(key)} | ${shown} |`);
-    }
+  for (const [key, shown] of redactedExtraEntries(extra)) {
+    const cell = escapeMarkdownTableCell(shown);
+    rows.push(`| ${escapeMarkdownTableCell(key)} | ${cell} |`);
   }
   for (const { key, value, isDefault } of getRedactedSettings(settings)) {
     const shown = escapeMarkdownTableCell(value);
