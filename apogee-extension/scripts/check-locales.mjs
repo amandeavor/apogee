@@ -17,18 +17,20 @@ function messageOf(catalog, key) {
   return typeof entry?.message === "string" ? entry.message : undefined;
 }
 
+function keysWithoutMessage(catalog, keys) {
+  return keys.filter((key) => !messageOf(catalog, key));
+}
+
 function checkDefaultCatalog(defaults) {
   const errors = [];
   const keys = Object.keys(defaults);
   if (keys.length === 0) {
     errors.push(`default locale "${DEFAULT_LOCALE}" defines no keys`);
   }
-  for (const key of keys) {
-    if (!messageOf(defaults, key)) {
-      errors.push(
-        `default locale "${DEFAULT_LOCALE}" key "${key}" must have a non-empty message string`,
-      );
-    }
+  for (const key of keysWithoutMessage(defaults, keys)) {
+    errors.push(
+      `default locale "${DEFAULT_LOCALE}" key "${key}" must have a non-empty message string`,
+    );
   }
   return { errors, keys };
 }
@@ -36,7 +38,7 @@ function checkDefaultCatalog(defaults) {
 function checkLocaleCatalog(code, catalog, defaultKeys) {
   const errors = [];
   const warnings = [];
-  const missing = defaultKeys.filter((key) => !messageOf(catalog, key));
+  const missing = keysWithoutMessage(catalog, defaultKeys);
   if (missing.length > 0) {
     errors.push(
       `locale "${code}" is missing ${missing.length} default-locale key(s): ${missing.join(", ")}`,
@@ -53,83 +55,86 @@ function checkLocaleCatalog(code, catalog, defaultKeys) {
   return { errors, warnings };
 }
 
-function checkGlossaryShape(glossary) {
+function checkTermShape(term, seen) {
   const errors = [];
-  if (!glossary || typeof glossary !== "object" || Array.isArray(glossary)) {
-    return { errors: ["glossary must be a JSON object with a terms array"] };
+  if (!term || typeof term !== "object") {
+    return { errors: ["glossary terms must be objects"], usable: false };
   }
-  if (!Array.isArray(glossary.terms) || glossary.terms.length === 0) {
-    errors.push("glossary must define a non-empty terms array");
-    return { errors };
+  if (typeof term.id !== "string" || term.id.length === 0) {
+    errors.push("glossary terms must have a non-empty string id");
+    return { errors, usable: false };
   }
-  const seen = new Set();
-  for (const term of glossary.terms) {
-    if (!term || typeof term !== "object") {
-      errors.push("glossary terms must be objects");
-      continue;
-    }
-    if (typeof term.id !== "string" || term.id.length === 0) {
-      errors.push("glossary terms must have a non-empty string id");
-      continue;
-    }
-    if (seen.has(term.id)) {
-      errors.push(`glossary term "${term.id}" is defined more than once`);
-    }
-    seen.add(term.id);
-    if (typeof term.en !== "string" || term.en.length === 0) {
-      errors.push(
-        `glossary term "${term.id}" must have a non-empty canonical "en" text`,
-      );
-    }
-    if (
-      !Array.isArray(term.keys) ||
-      term.keys.length === 0 ||
-      term.keys.some((key) => typeof key !== "string" || key.length === 0)
-    ) {
-      errors.push(
-        `glossary term "${term.id}" must list a non-empty array of catalog key strings`,
-      );
-    }
+  if (seen.has(term.id)) {
+    errors.push(`glossary term "${term.id}" is defined more than once`);
   }
-  return { errors };
+  seen.add(term.id);
+  if (typeof term.en !== "string" || term.en.length === 0) {
+    errors.push(
+      `glossary term "${term.id}" must have a non-empty canonical "en" text`,
+    );
+  }
+  if (
+    !Array.isArray(term.keys) ||
+    term.keys.length === 0 ||
+    term.keys.some((key) => typeof key !== "string" || key.length === 0)
+  ) {
+    errors.push(
+      `glossary term "${term.id}" must list a non-empty array of catalog key strings`,
+    );
+    return { errors, usable: false };
+  }
+  return { errors, usable: errors.length === 0 };
 }
 
-function checkGlossaryTerms(glossary, defaults, catalogs) {
+function summarizeRenderings(pairs) {
+  return pairs
+    .map(([key, text]) => `${key}=${JSON.stringify(text)}`)
+    .join(", ");
+}
+
+function checkTermDrift(term, defaults, catalogs) {
   const errors = [];
-  for (const term of glossary.terms) {
-    if (!term || typeof term !== "object") continue;
-    const unknown = (term.keys || []).filter((key) => !(key in defaults));
-    if (unknown.length > 0) {
-      errors.push(
-        `glossary term "${term.id}" lists unknown default-locale key(s): ${unknown.join(", ")}`,
-      );
-    }
-    const known = (term.keys || []).filter((key) => key in defaults);
-    const enTexts = new Map(
-      known.map((key) => [key, messageOf(defaults, key)]),
+  const unknown = term.keys.filter((key) => !(key in defaults));
+  if (unknown.length > 0) {
+    errors.push(
+      `glossary term "${term.id}" lists unknown default-locale key(s): ${unknown.join(", ")}`,
     );
-    if (![...enTexts.values()].every((text) => text === term.en)) {
-      const detail = [...enTexts]
-        .map(([key, text]) => `${key}=${JSON.stringify(text)}`)
-        .join(", ");
+  }
+  const known = term.keys.filter((key) => key in defaults);
+  const enTexts = known.map((key) => [key, messageOf(defaults, key)]);
+  if (!enTexts.every(([, text]) => text === term.en)) {
+    errors.push(
+      `glossary term "${term.id}" drifts in the default locale (expected ${JSON.stringify(term.en)}): ${summarizeRenderings(enTexts)}`,
+    );
+  }
+  for (const [code, catalog] of Object.entries(catalogs)) {
+    const present = known
+      .filter((key) => messageOf(catalog, key))
+      .map((key) => [key, catalog[key].message]);
+    if (new Set(present.map(([, text]) => text)).size > 1) {
       errors.push(
-        `glossary term "${term.id}" drifts in the default locale (expected ${JSON.stringify(term.en)}): ${detail}`,
+        `glossary term "${term.id}" drifts in locale "${code}" (one shared rendering per term): ${summarizeRenderings(present)}`,
       );
-    }
-    for (const [code, catalog] of Object.entries(catalogs)) {
-      const present = known.filter((key) => messageOf(catalog, key));
-      const renderings = new Set(present.map((key) => catalog[key].message));
-      if (renderings.size > 1) {
-        const detail = present
-          .map((key) => `${key}=${JSON.stringify(catalog[key].message)}`)
-          .join(", ");
-        errors.push(
-          `glossary term "${term.id}" drifts in locale "${code}" (one shared rendering per term): ${detail}`,
-        );
-      }
     }
   }
-  return { errors };
+  return errors;
+}
+
+function checkGlossary(glossary, defaults, catalogs) {
+  if (!glossary || typeof glossary !== "object" || Array.isArray(glossary)) {
+    return ["glossary must be a JSON object with a terms array"];
+  }
+  if (!Array.isArray(glossary.terms) || glossary.terms.length === 0) {
+    return ["glossary must define a non-empty terms array"];
+  }
+  const errors = [];
+  const seen = new Set();
+  for (const term of glossary.terms) {
+    const shape = checkTermShape(term, seen);
+    errors.push(...shape.errors);
+    if (shape.usable) errors.push(...checkTermDrift(term, defaults, catalogs));
+  }
+  return errors;
 }
 
 export function checkCatalogs(localesDir, glossary) {
@@ -166,12 +171,13 @@ export function checkCatalogs(localesDir, glossary) {
     warnings.push(...result.warnings);
   }
 
-  const shape = checkGlossaryShape(glossary);
-  errors.push(...shape.errors);
-  if (shape.errors.length === 0) {
-    errors.push(...checkGlossaryTerms(glossary, defaults, catalogs).errors);
-  }
+  errors.push(...checkGlossary(glossary, defaults, catalogs));
   return { errors, warnings };
+}
+
+function fail(message) {
+  console.error(`::error::${message}`);
+  process.exit(1);
 }
 
 function main() {
@@ -181,18 +187,12 @@ function main() {
     "_locales",
   );
   let glossary;
-  try {
-    glossary = readJson(resolve(localesDir, "glossary.json"));
-  } catch (err) {
-    console.error(`::error::${err.message}`);
-    process.exit(1);
-  }
   let result;
   try {
+    glossary = readJson(resolve(localesDir, "glossary.json"));
     result = checkCatalogs(localesDir, glossary);
   } catch (err) {
-    console.error(`::error::${err.message}`);
-    process.exit(1);
+    fail(err.message);
   }
   for (const warning of result.warnings) console.log(`::warning::${warning}`);
   if (result.errors.length > 0) {
