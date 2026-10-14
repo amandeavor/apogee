@@ -499,16 +499,16 @@ export function buildExtractedTextFallback(content, maxChars = 4000) {
 // so wrapping the start call alone would never retry them. Returns the
 // first success; when every engine fails, resolves with the extracted-text
 // fallback so the run still ends with page content instead of nothing.
+// opts.buildProvider(type) overrides provider construction (tests).
 export async function runWithEngineFallback(settings, chain, runFn, opts = {}) {
   const types = resolveEngineChain(settings, chain);
   const errors = [];
+  const build =
+    opts.buildProvider ??
+    ((type) => getProviderForType(type, { ...settings, provider: type }));
   for (const [index, type] of types.entries()) {
     try {
-      const provider = getProviderForType(type, {
-        ...settings,
-        provider: type,
-      });
-      const result = await runFn(type, provider, index);
+      const result = await runFn(type, await build(type), index);
       return { type, result, errors };
     } catch (err) {
       if (err instanceof StreamCancelledError) throw err;

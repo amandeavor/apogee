@@ -8,13 +8,23 @@ if (
 
 import {
   getProvider,
-  runWithEngineFallback,
   getProviderType,
   getModelForSettings,
   attachToStream,
   cancelStream,
   StreamCancelledError,
 } from "../lib/engines/providers.js";
+import { runStreamingJob } from "./jobs.js";
+import {
+  gateFocusKeyword,
+  isFocusKeywordSupportedType,
+  createKeywordPageTracker,
+} from "./focusKeyword.js";
+import {
+  syncCappedInputMaxLengths,
+  updateCappedInputCount,
+  wireCappedSettingsInput,
+} from "./cappedInputs.js";
 import {
   PROVIDERS,
   WEBLLM_MODELS,
@@ -350,18 +360,12 @@ const versionText = document.getElementById("versionText");
 // Single source of truth for input caps lives in JS (#320): the HTML
 // maxlength attributes are fallback only, re-synced here so bumping a
 // constant updates the enforced UI limit without touching markup.
-function setInputMaxLength(input, maxChars) {
-  if (input) input.maxLength = maxChars;
-}
-
-function syncCappedInputMaxLengths() {
-  setInputMaxLength(focusKeywordInput, FOCUS_KEYWORD_MAX_CHARS);
-  setInputMaxLength(customInstructionsInput, CUSTOM_INSTRUCTIONS_MAX_CHARS);
-  setInputMaxLength(privateHostsInput, PRIVATE_HOSTS_MAX_CHARS);
-  setInputMaxLength(llamaModelInput, MODEL_NAME_MAX_CHARS);
-}
-
-syncCappedInputMaxLengths();
+syncCappedInputMaxLengths([
+  [focusKeywordInput, FOCUS_KEYWORD_MAX_CHARS],
+  [customInstructionsInput, CUSTOM_INSTRUCTIONS_MAX_CHARS],
+  [privateHostsInput, PRIVATE_HOSTS_MAX_CHARS],
+  [llamaModelInput, MODEL_NAME_MAX_CHARS],
+]);
 
 // The side panel document survives tab switches, same-tab navigations,
 // and fresh opens on new pages, so a leftover keyword would silently
@@ -373,40 +377,17 @@ function clearFocusKeyword() {
 // One page-change check for the navigation listener and the restore
 // path below: clear a leftover keyword when the tab or URL moved on,
 // keep it on a same-page re-render.
+const keywordPageTracker = createKeywordPageTracker({
+  onClear: () => clearFocusKeyword(),
+});
+
 function clearKeywordOnPageChange(tabId, url) {
-  if (tabId !== lastKeywordTabId || url !== lastKeywordTabUrl) {
-    clearFocusKeyword();
-  }
-  lastKeywordTabId = tabId ?? null;
-  lastKeywordTabUrl = url ?? null;
+  keywordPageTracker.handlePageChange(tabId, url);
 }
 
 // Shared counter + debounced-autosave wiring for the capped settings
-// inputs: the custom-instructions and private-hosts blocks were identical
-// apart from element, cap, and settings key.
-function updateCappedInputCount(input, countEl, maxChars) {
-  if (!input || !countEl) return;
-  countEl.textContent = `${input.value.length} / ${maxChars}`;
-}
-
-function wireCappedSettingsInput(input, countEl, maxChars, settingKey) {
-  if (!input) return;
-  let saveTimer = null;
-  const persist = async () => {
-    await saveSettings({
-      [settingKey]: input.value.slice(0, maxChars).trim(),
-    });
-  };
-  input.addEventListener("input", () => {
-    updateCappedInputCount(input, countEl, maxChars);
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(persist, 500);
-  });
-  input.addEventListener("blur", () => {
-    clearTimeout(saveTimer);
-    persist();
-  });
-}
+// inputs lives in cappedInputs.js; saveSettings is injected at the call
+// sites below so tests can pass a fake.
 
 if (versionText) {
   versionText.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -462,12 +443,6 @@ let activeAskStreamId = null;
 let settingsEntryView = "homeView";
 
 let activeTabId = null;
-
-// Last tab + URL restoreTabView rendered. A fresh open on a new page
-// runs neither the tab-switch nor the navigation listener, so without
-// this check the input would keep the previous page's keyword.
-let lastKeywordTabId = null;
-let lastKeywordTabUrl = null;
 
 // Bumps on every side-panel tab restore so an in-flight restore for a
 // previous tab stands down instead of painting stale content.
@@ -831,21 +806,12 @@ const EXTRACTOR_INFO = {
   pdf: { label: "PDF", icon: "filetext" },
 };
 
-// Only multi-tab pages skip the keyword-focus prompt path: the multi-tab
-// synthesis uses buildMultiTabSummaryPrompt (no focusKeyword param - see
-// background/service-worker.js). Video goes through summarizeYoutube and
-// discussion threads go through the discussion prompts, both of which honor
-// focusKeyword (see lib/summarize/ollamaSummarize.js).
-function isFocusKeywordSupportedType(type) {
-  return type !== "multi-tab";
-}
 // Gate on type support (#319): the input is hidden for video, discussion,
 // and multi-tab pages, but a value typed before the type resolves (or left
 // over) must not fragment the cache or ride along in job payloads the
-// prompt path ignores.
+// prompt path ignores. Logic lives in focusKeyword.js.
 function getGatedFocusKeyword(pageType) {
-  const requested = (focusKeywordInput?.value || "").trim();
-  return isFocusKeywordSupportedType(pageType) ? requested : "";
+  return gateFocusKeyword(focusKeywordInput?.value, pageType);
 }
 async function getSummaryCacheKeys(url, settings, model, focusKeyword) {
   return {
@@ -1614,42 +1580,26 @@ function renderExtractedTextFallback(target, fallbackText) {
   announce("All engines failed. Showing extracted text.");
 }
 
-// Shared summarize attempt for the page and custom-content jobs (#415):
-// start each engine in chain order and consume its stream. persistStream
+// Shared summarize wiring for the page and custom-content jobs: reset the
+// spinner, track the stream on the cancel button, consume into the summary
+// view, and show extracted text when every engine fails. persistStream
 // saves the job's per-attempt state and returns "superseded" when a newer
 // job took over, which ends this job silently instead of falling back.
-// Resolves "done" on success and "fallback" once extracted text is shown.
-async function summarizeWithEngineFallback(
-  settings,
-  summarizeArgs,
-  { tab, jobId, promptsCacheKey, persistStream },
-) {
-  const outcome = await runWithEngineFallback(
+function summarizeJobRunner(settings, summarizeArgs, opts) {
+  const { tab, jobId, promptsCacheKey, persistStream } = opts;
+  return runStreamingJob({
     settings,
-    undefined,
-    async (type, engine) => {
-      setLoadingIndicator(summaryText, randomSummarizeVerb());
-      const { streamId, stream } = await engine.summarize(summarizeArgs);
-      if ((await persistStream(streamId)) === "superseded") {
-        cancelStream(streamId);
-        return "superseded";
-      }
-      showCancelSummarizeButton(streamId);
-      try {
-        await consumeSummaryStream(stream, { tab, promptsCacheKey, jobId });
-      } finally {
-        hideCancelSummarizeButton();
-      }
-      return "done";
-    },
-    { content: summarizeArgs.content },
-  );
-  if (outcome.result === "superseded") return "superseded";
-  if (outcome.type === "extracted-text") {
-    renderExtractedTextFallback(summaryText, outcome.result.fallbackText);
-    return "fallback";
-  }
-  return "done";
+    content: summarizeArgs.content,
+    reset: () => setLoadingIndicator(summaryText, randomSummarizeVerb()),
+    start: (engine) => engine.summarize(summarizeArgs),
+    persistStream,
+    showCancel: showCancelSummarizeButton,
+    hideCancel: hideCancelSummarizeButton,
+    consume: (stream) =>
+      consumeSummaryStream(stream, { tab, promptsCacheKey, jobId }),
+    renderFallback: (fallbackText) =>
+      renderExtractedTextFallback(summaryText, fallbackText),
+  });
 }
 
 async function returnHomeAfterCancel(tabId, jobId = null) {
@@ -1993,36 +1943,32 @@ async function summarizeActivePage() {
       // engines report failure mid-stream, after the start handshake
       // already resolved, so retrying only the start call would never
       // reach the next engine.
-      const result = await summarizeWithEngineFallback(
-        settings,
-        summarizeArgs,
-        {
-          tab,
-          jobId,
-          promptsCacheKey,
-          persistStream: async (streamId) => {
-            const activeJobState = await saveViewStateIfJobMatches(
-              tab.id,
-              jobId,
-              {
-                view: "summaryView",
-                subview: "summarizing",
-                url: tab.url,
-                streamId,
-                promptsCacheKey,
-                summaryLanguage: settings.summaryLanguage,
-                translationEngine: settings.translationEngine,
-              },
-              "summarizing",
-            );
-            if (!activeJobState) {
-              const latestState = await loadViewState(tab.id);
-              if (latestState?.jobId !== jobId) return "superseded";
-            }
-            return "done";
-          },
+      const result = await summarizeJobRunner(settings, summarizeArgs, {
+        tab,
+        jobId,
+        promptsCacheKey,
+        persistStream: async (streamId) => {
+          const activeJobState = await saveViewStateIfJobMatches(
+            tab.id,
+            jobId,
+            {
+              view: "summaryView",
+              subview: "summarizing",
+              url: tab.url,
+              streamId,
+              promptsCacheKey,
+              summaryLanguage: settings.summaryLanguage,
+              translationEngine: settings.translationEngine,
+            },
+            "summarizing",
+          );
+          if (!activeJobState) {
+            const latestState = await loadViewState(tab.id);
+            if (latestState?.jobId !== jobId) return "superseded";
+          }
+          return "done";
         },
-      );
+      });
       if (result !== "done") return;
     }
 
@@ -2136,12 +2082,12 @@ async function submitQuestion(question) {
       translationEngine: settings.translationEngine,
       onStats: (rate) => setTokensPerSecBadge(tokensPerSecBadgeAsk, rate),
     };
-    const asked = await runWithEngineFallback(
+    await runStreamingJob({
       settings,
-      undefined,
-      async (type, engine) => {
-        showAnswerContext(trimmed);
-        const { streamId, stream } = await engine.ask(askArgs);
+      content,
+      reset: () => showAnswerContext(trimmed),
+      start: (engine) => engine.ask(askArgs),
+      persistStream: async (streamId) => {
         await saveViewState(tab.id, {
           view: "summaryView",
           subview: "answer",
@@ -2149,20 +2095,15 @@ async function submitQuestion(question) {
           streamId,
           question: trimmed,
         });
-        showCancelAskButton(streamId);
-        try {
-          await consumeAnswerStream(stream, { tab, question: trimmed });
-        } finally {
-          hideCancelAskButton();
-        }
         return "done";
       },
-      { content },
-    );
-    if (asked.type === "extracted-text") {
-      renderExtractedTextFallback(answerBox, asked.result.fallbackText);
-      return;
-    }
+      showCancel: showCancelAskButton,
+      hideCancel: hideCancelAskButton,
+      consume: (stream) =>
+        consumeAnswerStream(stream, { tab, question: trimmed }),
+      renderFallback: (fallbackText) =>
+        renderExtractedTextFallback(answerBox, fallbackText),
+    });
   } catch (error) {
     if (error instanceof StreamCancelledError) {
       returnToAskAfterCancel(activeTabId);
@@ -2720,7 +2661,7 @@ async function summarizeCustomContent(title, content, url = "") {
         translationEngine: settings.translationEngine,
       },
     };
-    await summarizeWithEngineFallback(settings, customArgs, {
+    await summarizeJobRunner(settings, customArgs, {
       tab,
       jobId,
       promptsCacheKey,
@@ -2996,6 +2937,7 @@ wireCappedSettingsInput(
   customInstructionsCount,
   CUSTOM_INSTRUCTIONS_MAX_CHARS,
   "customInstructions",
+  saveSettings,
 );
 
 function updatePrivateHostsCount() {
@@ -3011,6 +2953,7 @@ wireCappedSettingsInput(
   privateHostsCount,
   PRIVATE_HOSTS_MAX_CHARS,
   "privateHosts",
+  saveSettings,
 );
 
 summaryLanguageSelect?.addEventListener("change", async () => {
