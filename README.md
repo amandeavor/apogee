@@ -30,6 +30,10 @@ For power users, Apogee also talks straight to a local Ollama instance over `127
 
 ⭐ If Apogee helps you, [star the repository](https://github.com/darshi1337/apogee). It helps the project reach more contributors.
 
+## Why the name
+
+Apogee is the point of an orbit farthest from Earth. The word also means the highest point of anything. The name keeps the orbit theme of Mozilla Orbit, the discontinued project that inspired this extension. It also states the aim: to fly higher than Orbit by staying local and private.
+
 ## Get Started
 
 1. Install Apogee from the [Chrome Web Store](https://chromewebstore.google.com/detail/apogee/pgemlpomhkdcjjjcpnjlebalnfglomog). Or use [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/apogeeext/).
