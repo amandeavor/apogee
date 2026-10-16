@@ -40,6 +40,10 @@ For power users, Apogee also talks straight to a local Ollama instance over `127
 
 The first in-browser run downloads the picked model. Cached models run offline after that. For larger models, set up [Ollama](OLLAMA.md) or [llama.cpp](LLAMACPP.md) in Settings.
 
+## Contribute
+
+Install the extension and use it each day. Read [ARCHITECTURE.md](ARCHITECTURE.md) to learn how it works. When something breaks, [open a bug report](https://github.com/darshi1337/apogee/issues/new/choose). A clear report is help enough. Each confirmed bug becomes an issue the next person can pick up. To fix a bug yourself, pick a [`first-timers-only`](https://github.com/darshi1337/apogee/issues?q=is%3Aissue+is%3Aopen+label%3Afirst-timers-only) or [`good first issue`](https://github.com/darshi1337/apogee/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) item and follow [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Why Apogee
 
 The discontinued Orbit project from Mozilla inspired Apogee. Orbit tried browser-based page summarization, but it used central API servers and stored summaries on servers.
