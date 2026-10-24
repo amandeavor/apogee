@@ -22,13 +22,21 @@ This guide explains the Apogee codebase layout and repo folder structure. It cov
 
 ### Dependency overrides
 
-`apogee-extension/package.json` pins three transitive deps above the ranges their parents declare. Each pin exists because of a real advisory, so do not loosen one without checking `npm audit` first:
+`apogee-extension/package.json` pins seven transitive deps above the ranges their parents declare. Each pin holds a patched release, so do not loosen one without checking `npm audit` first:
 
-- `adm-zip@^0.6.0` (`onnxruntime-node` asks for `^0.5.16`). GHSA-xcpc-8h2w-3j85 covers a crafted ZIP that triggers a multi-gigabyte allocation. Fixed in 0.6.0.
+- `adm-zip@^0.6.1` (`onnxruntime-node` asks for `^0.5.16`). GHSA-xcpc-8h2w-3j85 covers a crafted ZIP that triggers a multi-gigabyte allocation. Fixed in 0.6.0.
 
-- `sharp@^0.35.0` (`@huggingface/transformers` asks for `^0.34.5`). GHSA-f88m-g3jw-g9cj covers libvips flaws up to High severity. Fixed from 0.35.0.
+- `sharp@^0.35.5` (`@huggingface/transformers` asks for `^0.34.5`). GHSA-f88m-g3jw-g9cj covers libvips flaws up to High severity. GHSA-wq5f-xc86-pv6w covers a librsvg flaw. The pin holds both fixes.
 
-- `brace-expansion@^5.0.9` (old `minimatch@3` asks for `^1.1.7`). GHSA-rgw5-rvv9-x895 and earlier brace-expansion DoS advisories apply. It forces the patched 5.x line even where old minimatch asks for 1.x.
+- `brace-expansion@^5.0.12` (old `minimatch@3` asks for `^1.1.7`). GHSA-rgw5-rvv9-x895 and earlier brace-expansion DoS advisories apply. The override forces the patched 5.x line even where old minimatch asks for 1.x.
+
+- `shell-quote@^1.12.0` (`fx-runner` asks for `1.10.0`). GHSA-pqg4-j6r4-53mv is a critical command-injection advisory. Fixed in 1.11.0.
+
+- `fast-uri@^4.2.3` (transitive). GHSA-58mr-gqgx-xq4g covers host confusion from a crafted URI. The 4.x line carries the fix.
+
+- `js-yaml@^4.3.2` (transitive). Keeps the parser on the patched 4.x line.
+
+- `undici@^8.12.3` (transitive). Keeps the HTTP client on the patched 8.x line.
 
 ## Development and Build Commands
 

@@ -135,3 +135,5 @@ These should never reach the UI. If one does, report it as a bug with the steps 
 If your symptom matches a known failure, the [Troubleshooting](TROUBLESHOOTING.md) page may fix it faster than a report.
 
 Turn on debug logs in Settings. Reproduce the failure. Then use Copy diagnostics. That copies the browser, provider, model, WebGPU state, and recent log lines. It also copies the raw base error. The raw error is often more exact than the message shown in the popup.
+
+Use **Download configuration** in Settings to save a redacted `apogee-config.json` with your settings, extension version, browser, and WebGPU state. Attach it if the failure may depend on settings.
