@@ -225,6 +225,10 @@
     "message": "Auto-select engine by input kind and size",
     "description": "Checkbox label for automatic engine selection"
   },
+  "autoEngineShort": {
+    "message": "Auto-select",
+    "description": "Compact label for the automatic engine selection toggle"
+  },
   "providerWebllm": {
     "message": "In-Browser AI (GPU)",
     "description": "WebLLM provider label"
@@ -288,7 +292,7 @@
     "description": "Translation card title"
   },
   "translatorOpus": {
-    "message": "Dedicated translator (Opus-MT, downloads)",
+    "message": "Opus-MT (downloads)",
     "description": "Opus translator option"
   },
   "translatorLlm": {
@@ -312,10 +316,6 @@
     "message": "Custom Instructions",
     "description": "Custom instructions title"
   },
-  "customInstructionsHint": {
-    "message": "Extra instructions added to every summary and answer, on top of Apogee's built-in prompt, e.g. \"Explain like I'm five\", \"Focus on the technical details\", or \"Answer in a formal tone\". Leave blank to use the defaults.",
-    "description": "Custom instructions help text"
-  },
   "customInstructionsPlaceholder": {
     "message": "e.g. Keep it concise and highlight any action items.",
     "description": "Custom instructions placeholder"
@@ -325,20 +325,20 @@
     "description": "SponsorBlock title"
   },
   "sponsorBlockOn": {
-    "message": "Use SponsorBlock to skip sponsor segments",
+    "message": "Skip sponsor segments",
     "description": "SponsorBlock on option"
   },
   "sponsorBlockOff": {
-    "message": "Stay fully local (don't contact SponsorBlock)",
+    "message": "Stay fully local",
     "description": "SponsorBlock off option"
   },
   "privacy": { "message": "Privacy", "description": "Privacy card title" },
   "saveHistoryOn": {
-    "message": "Save summaries & history locally",
+    "message": "Save history locally",
     "description": "Save history on option"
   },
   "saveHistoryOff": {
-    "message": "Don't save, and delete what's already saved",
+    "message": "Don't save, delete history",
     "description": "Save history off option"
   },
   "historyDeleteAndOff": {
@@ -346,7 +346,7 @@
     "description": "History wipe confirm button"
   },
   "privateHostsHint": {
-    "message": "Pages on known webmail and chat hosts are never saved. Add any other host that should be treated the same way, one per line, e.g. your own mail server or a patient portal. A host also covers its subdomains.",
+    "message": "Add other hosts to never save, one per line.",
     "description": "Private hosts help text"
   },
   "privateHostsPlaceholder": {
@@ -354,7 +354,7 @@
     "description": "Private hosts placeholder"
   },
   "clearCached": {
-    "message": "Clear cached summaries & page data",
+    "message": "Clear cached data",
     "description": "Clear data button"
   },
   "activityAudit": {
@@ -366,28 +366,24 @@
     "description": "Audit network label"
   },
   "pageAccessHistory": {
-    "message": "Page Access History:",
+    "message": "Pages processed:",
     "description": "Audit access label"
   },
   "storageRetention": {
-    "message": "Storage Retention:",
+    "message": "Cached items:",
     "description": "Audit storage label"
   },
   "recentAccessLog": {
-    "message": "Recent Page Access Log",
+    "message": "Recent access log",
     "description": "Audit log heading"
   },
   "noAccessYet": {
-    "message": "No page access recorded yet.",
+    "message": "No page access yet.",
     "description": "Audit log empty state"
   },
   "diagnostics": {
     "message": "Diagnostics",
     "description": "Diagnostics title"
-  },
-  "diagnosticsHint": {
-    "message": "Records what the AI engine is doing as it loads and generates. Off by default; turn it on before reproducing a bug, then attach the log panel's output (it appears with the model progress bar while a summary runs).",
-    "description": "Diagnostics help text"
   },
   "diagnosticsOff": {
     "message": "Don't record engine logs",
@@ -401,21 +397,9 @@
     "message": "Copy diagnostics as Markdown",
     "description": "Copy diagnostics button"
   },
-  "copyDiagnosticsHint": {
-    "message": "Custom instructions and a non-loopback Ollama host are reported as a shape only, never their contents.",
-    "description": "Diagnostics copy hint"
-  },
-  "effectiveConfig": {
-    "message": "Effective configuration",
-    "description": "Effective configuration title"
-  },
-  "effectiveConfigHint": {
-    "message": "The settings currently in effect. Secrets show as set or unset, never their contents.",
-    "description": "Effective configuration help text"
-  },
-  "effectiveConfigEmpty": {
-    "message": "No settings loaded yet.",
-    "description": "Effective configuration empty text"
+  "downloadEffectiveConfig": {
+    "message": "Download configuration",
+    "description": "Download effective configuration button"
   },
   "getInTouch": {
     "message": "Get in touch",

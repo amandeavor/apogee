@@ -658,14 +658,20 @@
             <div class="card-title">
               <span class="ico" data-ico="plug" aria-hidden="true"></span>
               <span data-i18n="aiProvider">AI Provider</span>
-            </div>
-
-            <label class="radio-option">
-              <input type="checkbox" id="autoEngineCheckbox" />
-              <span data-i18n="autoEngineLabel"
-                >Auto-select engine by input kind and size</span
+              <label
+                class="auto-engine-option"
+                title="Auto-select engine by input kind and size"
+                data-i18n-title="autoEngineLabel"
               >
-            </label>
+                <input
+                  type="checkbox"
+                  id="autoEngineCheckbox"
+                  aria-label="Auto-select engine by input kind and size"
+                  data-i18n-aria-label="autoEngineLabel"
+                />
+                <span data-i18n="autoEngineShort">Auto-select</span>
+              </label>
+            </div>
 
             <label class="radio-option" id="webllmProviderOption">
               <input type="radio" name="provider" value="webllm" checked />
@@ -818,9 +824,7 @@
                 value="opus"
                 checked
               />
-              <span data-i18n="translatorOpus"
-                >Dedicated translator (Opus-MT, downloads)</span
-              >
+              <span data-i18n="translatorOpus">Opus-MT (downloads)</span>
             </label>
 
             <label class="radio-option">
@@ -856,12 +860,6 @@
               <span class="ico" data-ico="pencil" aria-hidden="true"></span>
               <span data-i18n="customInstructions">Custom Instructions</span>
             </div>
-            <p class="settings-hint" data-i18n="customInstructionsHint">
-              Extra instructions added to every summary and answer, on top of
-              Apogee's built-in prompt, e.g. "Explain like I'm five", "Focus on
-              the technical details", or "Answer in a formal tone". Leave blank
-              to use the defaults.
-            </p>
             <textarea
               id="customInstructionsInput"
               class="settings-textarea"
@@ -885,16 +883,12 @@
 
             <label class="radio-option">
               <input type="radio" name="useSponsorBlock" value="on" checked />
-              <span data-i18n="sponsorBlockOn"
-                >Use SponsorBlock to skip sponsor segments</span
-              >
+              <span data-i18n="sponsorBlockOn">Skip sponsor segments</span>
             </label>
 
             <label class="radio-option">
               <input type="radio" name="useSponsorBlock" value="off" />
-              <span data-i18n="sponsorBlockOff"
-                >Stay fully local (don't contact SponsorBlock)</span
-              >
+              <span data-i18n="sponsorBlockOff">Stay fully local</span>
             </label>
           </div>
 
@@ -913,9 +907,7 @@
 
             <label class="radio-option">
               <input type="radio" name="saveHistory" value="off" />
-              <span data-i18n="saveHistoryOff"
-                >Don't save, and delete what's already saved</span
-              >
+              <span data-i18n="saveHistoryOff">Don't save, delete history</span>
             </label>
 
             <div id="historyWipeConfirm" class="history-wipe hidden">
@@ -941,10 +933,7 @@
             </div>
 
             <p class="settings-hint" data-i18n="privateHostsHint">
-              Pages on known webmail and chat hosts are never saved. Add any
-              other host that should be treated the same way, one per line, e.g.
-              your own mail server or a patient portal. A host also covers its
-              subdomains.
+              Add other hosts to never save, one per line.
             </p>
             <textarea
               id="privateHostsInput"
@@ -960,9 +949,7 @@
 
             <button id="clearDataBtn" class="clear-data-btn">
               <span class="ico" data-ico="trash" aria-hidden="true"></span>
-              <span data-i18n="clearCached"
-                >Clear cached summaries &amp; page data</span
-              >
+              <span data-i18n="clearCached">Clear cached data</span>
             </button>
             <div id="clearDataStatus" class="clear-data-status"></div>
           </div>
@@ -986,49 +973,27 @@
               </div>
               <div class="audit-row">
                 <span class="audit-label" data-i18n="pageAccessHistory"
-                  >Page Access History:</span
+                  >Pages processed:</span
                 >
-                <span id="auditAccessCount" class="audit-val"
-                  >0 pages processed</span
-                >
+                <span id="auditAccessCount" class="audit-val">0</span>
               </div>
               <div class="audit-row">
                 <span class="audit-label" data-i18n="storageRetention"
-                  >Storage Retention:</span
+                  >Cached items:</span
                 >
-                <span id="auditStorageRetention" class="audit-val"
-                  >Cached items: 0</span
-                >
+                <span id="auditStorageRetention" class="audit-val">0</span>
               </div>
             </div>
 
             <div class="audit-details">
               <h4 class="audit-subheading" data-i18n="recentAccessLog">
-                Recent Page Access Log
+                Recent access log
               </h4>
               <div id="auditLogList" class="audit-log-list">
                 <p class="audit-empty" data-i18n="noAccessYet">
-                  No page access recorded yet.
+                  No page access yet.
                 </p>
               </div>
-            </div>
-          </div>
-
-          <div class="settings-card">
-            <div class="card-title">
-              <span class="ico" data-ico="lines" aria-hidden="true"></span>
-              <span data-i18n="effectiveConfig">Effective configuration</span>
-            </div>
-
-            <p class="settings-hint" data-i18n="effectiveConfigHint">
-              The settings currently in effect. Secrets show as set or unset,
-              never their contents.
-            </p>
-
-            <div id="effectiveConfigList" class="effective-config-list-wrap">
-              <p class="audit-empty" data-i18n="effectiveConfigEmpty">
-                No settings loaded yet.
-              </p>
             </div>
           </div>
 
@@ -1037,13 +1002,6 @@
               <span class="ico" data-ico="inspect" aria-hidden="true"></span>
               <span data-i18n="diagnostics">Diagnostics</span>
             </div>
-
-            <p class="settings-hint" data-i18n="diagnosticsHint">
-              Records what the AI engine is doing as it loads and generates. Off
-              by default; turn it on before reproducing a bug, then attach the
-              log panel's output (it appears with the model progress bar while a
-              summary runs).
-            </p>
 
             <label class="radio-option">
               <input type="radio" name="debugLogs" value="off" checked />
@@ -1063,17 +1021,24 @@
             >
               Copy diagnostics as Markdown
             </button>
-            <p
-              id="copyDiagnosticsHint"
-              class="settings-hint copy-diagnostics-hint"
-              data-i18n="copyDiagnosticsHint"
-            >
-              Custom instructions and a non-loopback Ollama host are reported as
-              a shape only, never their contents.
-            </p>
           </div>
 
           <div class="settings-divider"></div>
+
+          <button id="downloadConfigBtn" class="settings-contact-btn">
+            <div class="settings-contact-left">
+              <span class="ico" data-ico="download" aria-hidden="true"></span>
+              <span data-i18n="downloadEffectiveConfig"
+                >Download configuration</span
+              >
+            </div>
+
+            <span
+              class="ico arrow-icon"
+              data-ico="arrow"
+              aria-hidden="true"
+            ></span>
+          </button>
 
           <button id="getInTouchBtn" class="settings-contact-btn">
             <div class="settings-contact-left">

@@ -21,8 +21,7 @@ import {
 } from "../lib/engines/engineRules.js";
 import { estimateTokens } from "../lib/engines/modelLimits.js";
 import { runStreamingJob } from "./jobs.js";
-import { renderEffectiveConfig } from "./effectiveConfig.js";
-import { getRedactedSettings } from "../lib/util/diagnostics.js";
+import { formatEffectiveConfigJSON } from "./effectiveConfig.js";
 import {
   gateFocusKeyword,
   isFocusKeywordSupportedType,
@@ -314,6 +313,7 @@ const themeToggleBtns = document.querySelectorAll(".side-panel-theme-btn");
 const backendUrlInput = document.getElementById("backendUrlInput");
 const promptsCloseBtn = document.querySelector(".prompts-toggle");
 const togglePromptsBtn = document.getElementById("togglePromptsBtn");
+const downloadConfigBtn = document.getElementById("downloadConfigBtn");
 const getInTouchBtn = document.getElementById("getInTouchBtn");
 const contactView = document.getElementById("contactView");
 const settingsBackBtn = document.getElementById("settingsBackBtn");
@@ -349,8 +349,6 @@ const toggleDebugLogsBtn = document.getElementById("toggleDebugLogsBtn");
 const debugLogsCard = document.getElementById("debugLogsCard");
 const debugLogsContent = document.getElementById("debugLogsContent");
 const copyDiagnosticsBtn = document.getElementById("copyDiagnosticsBtn");
-const copyDiagnosticsHint = document.getElementById("copyDiagnosticsHint");
-const effectiveConfigList = document.getElementById("effectiveConfigList");
 const clearDebugLogsBtn = document.getElementById("clearDebugLogsBtn");
 const a11yAnnouncer = document.getElementById("a11yAnnouncer");
 const saveHistoryRadios = document.querySelectorAll(
@@ -529,9 +527,6 @@ async function restoreSuggestedPrompts({
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes.settings) {
-    refreshEffectiveConfigView(changes.settings.newValue);
-  }
   if (!currentPromptsCacheKey) return;
   const change = changes[currentPromptsCacheKey];
   if (!change) return;
@@ -771,13 +766,6 @@ async function applySettingsToUI(settings) {
 
   updateWebgpuWarning(isWebllm).catch((err) => console.error(err));
   updatePrivacyAuditUI().catch((err) => console.error(err));
-  refreshEffectiveConfigView(settings);
-}
-
-// Effective-config card (#416): one refresh path for initial apply and
-// storage updates, so the view cannot lag behind the stored setup.
-function refreshEffectiveConfigView(settings) {
-  renderEffectiveConfig(effectiveConfigList, getRedactedSettings(settings));
 }
 
 async function updatePrivacyAuditUI() {
@@ -800,18 +788,17 @@ async function updatePrivacyAuditUI() {
     });
 
     const zeroEgress = summary.networkEgress?.zeroEgress;
-    const msg = summary.networkEgress?.statusMessage || "100% Local";
+    const msg = summary.networkEgress?.statusMessage || "100% local";
     networkEl.textContent = msg;
     networkEl.className = `audit-badge ${zeroEgress ? "success" : "info"}`;
 
-    countEl.textContent = `${summary.pageAccessCount || 0} pages processed`;
-    storageEl.textContent = `Cached items: ${summary.storageRetention?.cachedPagesCount || 0}`;
+    countEl.textContent = `${summary.pageAccessCount || 0}`;
+    storageEl.textContent = `${summary.storageRetention?.cachedPagesCount || 0}`;
 
     listEl.innerHTML = "";
     const logs = summary.recentAccesses || [];
     if (logs.length === 0) {
-      listEl.innerHTML =
-        '<p class="audit-empty">No page access recorded yet.</p>';
+      listEl.innerHTML = '<p class="audit-empty">No page access yet.</p>';
     } else {
       for (const entry of logs) {
         const item = document.createElement("div");
@@ -3216,7 +3203,6 @@ function syncDebugLogsRadios(on) {
     radio.checked = radio.value === (on ? "on" : "off");
   });
   copyDiagnosticsBtn?.classList.toggle("hidden", !on);
-  copyDiagnosticsHint?.classList.toggle("hidden", !on);
 }
 
 debugLogsRadios.forEach((radio) => {
@@ -3224,7 +3210,6 @@ debugLogsRadios.forEach((radio) => {
     const on = radio.value === "on";
     await saveSettings({ debugLogs: on });
     copyDiagnosticsBtn?.classList.toggle("hidden", !on);
-    copyDiagnosticsHint?.classList.toggle("hidden", !on);
   });
 });
 
@@ -3369,6 +3354,22 @@ togglePromptsBtn?.addEventListener("click", () => {
   promptsSection.classList.remove("hidden");
   togglePromptsBtn.setAttribute("aria-expanded", "true");
   togglePromptsBtn.style.display = "none";
+});
+
+downloadConfigBtn?.addEventListener("click", async () => {
+  try {
+    const settings = await getSettings();
+    downloadTextFile({
+      filename: "apogee-config.json",
+      text: formatEffectiveConfigJSON(settings, {
+        version: chrome.runtime.getManifest().version,
+        browser: navigator.userAgent,
+        webgpu: "gpu" in navigator ? "available" : "unavailable",
+      }),
+    });
+  } catch (err) {
+    console.error("Download configuration error:", err);
+  }
 });
 
 getInTouchBtn?.addEventListener("click", () => {

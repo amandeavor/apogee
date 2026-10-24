@@ -74,8 +74,8 @@ export async function getActivityAuditSummary() {
       zeroEgress: !externalRequestsAllowed,
       sponsorBlockActive,
       statusMessage: !externalRequestsAllowed
-        ? "0 external network requests (100% on-device local execution)"
-        : "Local execution active (Optional SponsorBlock API enabled for video segment skipping)",
+        ? "100% local"
+        : "Local + SponsorBlock API",
     },
     storageRetention: {
       saveHistory: settings.saveHistory !== false,

@@ -1479,6 +1479,62 @@ html:not([data-surface="side-panel"]) #uploadFileBtn {
   color: var(--text-muted);
 }
 
+.card-title .auto-engine-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auto-engine-option input[type="checkbox"] {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--radio-border);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.auto-engine-option input[type="checkbox"]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  transform: scale(0);
+  transition: transform 0.12s ease;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  background: var(--bg-color);
+}
+
+.auto-engine-option input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.auto-engine-option input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+.auto-engine-option input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.card-title .auto-engine-option span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .radio-option {
   display: flex;
   align-items: center;
@@ -2301,28 +2357,6 @@ html:not([data-surface="side-panel"]) #uploadFileBtn {
   gap: 4px;
 }
 
-.effective-config-list {
-  display: grid;
-  grid-template-columns: minmax(120px, auto) 1fr;
-  gap: 4px 12px;
-  margin: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  font-size: 11px;
-}
-
-.effective-config-key {
-  color: var(--text-muted);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.effective-config-value {
-  margin: 0;
-  color: var(--text-main);
-  overflow-wrap: anywhere;
-}
-
 .audit-log-item {
   display: flex;
   align-items: center;
@@ -2419,10 +2453,6 @@ html:not([data-surface="side-panel"]) #uploadFileBtn {
 .copy-diagnostics-btn:hover {
   background: var(--btn-hover-bg);
   border-color: var(--btn-hover-border);
-}
-
-.copy-diagnostics-hint {
-  margin-top: 8px;
 }
 
 .side-panel-theme-btn,
