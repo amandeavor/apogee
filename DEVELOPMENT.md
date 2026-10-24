@@ -26,7 +26,7 @@ This guide explains the Apogee codebase layout and repo folder structure. It cov
 
 - `adm-zip@^0.6.1` (`onnxruntime-node` asks for `^0.5.16`). GHSA-xcpc-8h2w-3j85 covers a crafted ZIP that triggers a multi-gigabyte allocation. Fixed in 0.6.0.
 
-- `sharp@^0.35.5` (`@huggingface/transformers` asks for `^0.34.5`). GHSA-f88m-g3jw-g9cj covers libvips flaws up to High severity. GHSA-wq5f-xc86-pv6w covers a librsvg flaw. The pin holds both fixes.
+- `sharp@^0.35.5` (`@huggingface/transformers` asks for `^0.34.5`). GHSA-f88m-g3jw-g9cj covers libvips flaws up to High severity. GHSA-wq5f-xc86-pv6w covers a flaw in the SVG rendering library. The pin holds both fixes.
 
 - `brace-expansion@^5.0.12` (old `minimatch@3` asks for `^1.1.7`). GHSA-rgw5-rvv9-x895 and earlier brace-expansion DoS advisories apply. The override forces the patched 5.x line even where old minimatch asks for 1.x.
 
