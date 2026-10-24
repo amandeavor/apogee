@@ -72,4 +72,6 @@ If the popup cannot read the page, or the page holds nothing to summarize:
 
 3. Use Copy diagnostics in the popup. That copies the browser, provider, model, WebGPU state, and recent log lines. It also copies the raw base error. The raw error is often more exact than the message shown in the popup.
 
-4. Paste that block into your bug report.
+4. Use Download configuration in Settings to save a redacted `apogee-config.json`. It holds your settings shape, extension version, browser, and WebGPU state.
+
+5. Paste the block into your bug report. Attach the JSON file if your settings may matter.

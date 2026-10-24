@@ -82,11 +82,11 @@ Apogee ships no Google Analytics, Mixpanel, crash-reporting SDKs, or telemetry o
 
 Settings includes an **Activity & Privacy Audit** panel. It gives full visual insight into local runs:
 
-- **Network Egress Verification**: With the SponsorBlock lookup off, it confirms zero network egress requests during inference (100% on-device local run). Otherwise it reports local runs with the optional SponsorBlock lookup on.
+- **Network Egress**: With the SponsorBlock lookup off, the badge reads **100% local**. It confirms zero network egress requests during inference. With the lookup on, it reads **Local + SponsorBlock API**.
 
-- **Page Access Audit Log**: It shows a clear, capped log of recent page extractions (title, URL, content char length, page type, and timestamp).
+- **Pages processed**: It shows how many recent page extractions the capped log holds. The log lists title, URL, content char length, page type, and timestamp.
 
-- **Storage Retention Audit**: It shows active cache storage use and history retention policies.
+- **Cached items**: It shows the number of cached summary and page-text entries.
 
 ## Local Data Storage Controls
 
@@ -100,9 +100,11 @@ Settings includes an **Activity & Privacy Audit** panel. It gives full visual in
 
   This is a fixed list, not content detection. Under Settings, then Privacy, name your own hosts (one per line) for the same treatment.
 
-  Examples: a bank, a health portal, your own mail server, or a smaller webmail provider. A host you add also covers its subdomains. Anything on neither list follows normal caching, unless you pick `"Don't save"`.
+  Examples: a bank, a health portal, your own mail server, or a smaller webmail provider. A host you add also covers its subdomains. Anything on neither list follows normal caching, unless you pick `"Don't save, delete history"`.
 
-- **Session-Only Storage and On-Demand Clearing**: Under Settings, then Privacy, pick `"Don't save (this session only)"`. Then nothing page-derived reaches disk. Click "Clear cached summaries & page data" to wipe all cached content on demand. Your prefs stay.
+- **Session-Only Storage and On-Demand Clearing**: Under Settings, then Privacy, pick `"Don't save, delete history"`. Then no page-derived data reaches disk. Click `"Clear cached data"` to wipe all cached content on demand. Your prefs stay.
+
+- **Configuration Download**: Settings has a **Download configuration** action. It saves `apogee-config.json` on your device with the extension version, browser, WebGPU state, redacted settings, and the keys that still hold their default values. Custom instructions, private hosts, API keys, and custom hosts appear as a shape, not their contents. Nothing is uploaded.
 
 - **Model Weights Storage**: Model weights stay in standard browser cache structures locally. They never go out.
 
