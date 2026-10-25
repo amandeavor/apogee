@@ -448,6 +448,7 @@ resummarizeHintBtn?.addEventListener("click", () => {
 });
 let currentAnswerText = "";
 let activeSummarizeStreamId = null;
+let isSummarizeStarting = false;
 let activeAskStreamId = null;
 let settingsEntryView = "homeView";
 
@@ -1578,7 +1579,12 @@ function showCancelSummarizeButton(streamId) {
 }
 
 function hideCancelSummarizeButton() {
-  setCancelButton(cancelSummarizeBtn, false);
+  setCancelButton(
+    cancelSummarizeBtn,
+    false,
+    null,
+    (id) => (activeSummarizeStreamId = id),
+  );
 }
 
 function helpLink(message) {
@@ -1927,6 +1933,10 @@ async function extractAndCopyPage() {
 }
 
 async function summarizeActivePage() {
+  if (isSummarizeStarting) {
+    return;
+  }
+  isSummarizeStarting = true;
   if (activeSummarizeStreamId) {
     cancelStream(activeSummarizeStreamId);
   }
@@ -2080,6 +2090,7 @@ async function summarizeActivePage() {
       renderSummaryError(error);
     }
   } finally {
+    isSummarizeStarting = false;
     hideCancelSummarizeButton();
   }
 }
