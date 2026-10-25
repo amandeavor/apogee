@@ -20,7 +20,7 @@ import {
   resolveCandidateChain,
 } from "../lib/engines/engineRules.js";
 import { estimateTokens } from "../lib/engines/modelLimits.js";
-import { runStreamingJob } from "./jobs.js";
+import { runStreamingJob, createJobStartGate } from "./jobs.js";
 import { formatEffectiveConfigJSON } from "./effectiveConfig.js";
 import {
   gateFocusKeyword,
@@ -448,8 +448,9 @@ resummarizeHintBtn?.addEventListener("click", () => {
 });
 let currentAnswerText = "";
 let activeSummarizeStreamId = null;
-let isSummarizeStarting = false;
 let activeAskStreamId = null;
+const summaryStartGate = createJobStartGate();
+const askStartGate = createJobStartGate();
 let settingsEntryView = "homeView";
 
 let activeTabId = null;
@@ -1554,38 +1555,41 @@ copyAnswerBtn?.addEventListener("click", () =>
 );
 resummarizeBtn?.addEventListener("click", () => summarizeActivePage());
 
-// Shared cancel-button state for the summarize/ask streams: same label,
-// enable, and visibility shape — only the button and its active-stream slot
-// differ.
-function setCancelButton(btn, show, streamId, setActiveId) {
-  setActiveId?.(show ? streamId : null);
-  if (show) {
+// One controller per stream slot keeps the cancel button, active stream id,
+// and the hide race in one place. A stale job cannot hide a newer job's button.
+function createCancelControl(btn, getActiveId, setActiveId) {
+  const show = (streamId) => {
+    setActiveId(streamId);
     btn.textContent = "Cancel";
     btn.disabled = false;
     btn.classList.remove("hidden");
-  } else {
+  };
+  const hide = (streamId) => {
+    if (streamId != null && getActiveId() !== streamId) return;
+    setActiveId(null);
     btn.classList.add("hidden");
     modelProgress?.classList.add("hidden");
-  }
+  };
+  btn?.addEventListener("click", () => {
+    const streamId = getActiveId();
+    if (!streamId) return;
+    btn.disabled = true;
+    btn.textContent = "Cancelling...";
+    cancelStream(streamId);
+  });
+  return { show, hide };
 }
 
-function showCancelSummarizeButton(streamId) {
-  setCancelButton(
-    cancelSummarizeBtn,
-    true,
-    streamId,
-    (id) => (activeSummarizeStreamId = id),
-  );
-}
-
-function hideCancelSummarizeButton() {
-  setCancelButton(
-    cancelSummarizeBtn,
-    false,
-    null,
-    (id) => (activeSummarizeStreamId = id),
-  );
-}
+const summaryCancel = createCancelControl(
+  cancelSummarizeBtn,
+  () => activeSummarizeStreamId,
+  (id) => (activeSummarizeStreamId = id),
+);
+const askCancel = createCancelControl(
+  cancelAskBtn,
+  () => activeAskStreamId,
+  (id) => (activeAskStreamId = id),
+);
 
 function helpLink(message) {
   const link = document.createElement("a");
@@ -1647,7 +1651,7 @@ function renderExtractedTextFallback(target, fallbackText) {
 // saves the job's per-attempt state and returns "superseded" when a newer
 // job took over, which ends this job silently instead of falling back.
 function summarizeJobRunner(settings, summarizeArgs, opts) {
-  const { tab, jobId, promptsCacheKey, persistStream } = opts;
+  const { tab, jobId, promptsCacheKey, persistStream, onStreamStart } = opts;
   const kind = detectInputKind({
     type: summarizeArgs.type,
     isPdf: opts.isPdf,
@@ -1663,8 +1667,9 @@ function summarizeJobRunner(settings, summarizeArgs, opts) {
     reset: () => setLoadingIndicator(summaryText, randomSummarizeVerb()),
     start: (engine) => engine.summarize(summarizeArgs),
     persistStream,
-    showCancel: showCancelSummarizeButton,
-    hideCancel: hideCancelSummarizeButton,
+    onStreamStart,
+    showCancel: summaryCancel.show,
+    hideCancel: summaryCancel.hide,
     consume: (stream) =>
       consumeSummaryStream(stream, { tab, promptsCacheKey, jobId }),
     renderFallback: (fallbackText) =>
@@ -1748,30 +1753,10 @@ function showAnswerContext(question) {
   setTokensPerSecBadge(tokensPerSecBadgeAsk, null);
 }
 
-function showCancelAskButton(streamId) {
-  setCancelButton(
-    cancelAskBtn,
-    true,
-    streamId,
-    (id) => (activeAskStreamId = id),
-  );
-}
-
-function hideCancelAskButton() {
-  setCancelButton(cancelAskBtn, false);
-}
-
 function returnToAskAfterCancel(tabId) {
   showAskContext();
   saveViewState(tabId, { view: "summaryView", subview: "ask", streamId: null });
 }
-
-cancelAskBtn?.addEventListener("click", () => {
-  if (!activeAskStreamId) return;
-  cancelAskBtn.disabled = true;
-  cancelAskBtn.textContent = "Cancelling...";
-  cancelStream(activeAskStreamId);
-});
 
 async function streamGeneratorIntoElement(generator, element) {
   let fullText = "";
@@ -1933,20 +1918,20 @@ async function extractAndCopyPage() {
 }
 
 async function summarizeActivePage() {
-  if (isSummarizeStarting) {
-    return;
-  }
-  isSummarizeStarting = true;
-  if (activeSummarizeStreamId) {
-    cancelStream(activeSummarizeStreamId);
-  }
-  homeView.classList.add("hidden");
-  summaryView.classList.remove("hidden");
-  showSummarizingContext();
-  setLoadingIndicator(summaryText, randomSummarizeVerb());
-
-  const jobId = `summary-${crypto.randomUUID()}`;
+  const startToken = summaryStartGate.tryStart();
+  if (!startToken) return;
+  let startedStreamId = null;
+  let jobId = null;
   try {
+    if (activeSummarizeStreamId) {
+      cancelStream(activeSummarizeStreamId);
+    }
+    homeView.classList.add("hidden");
+    summaryView.classList.remove("hidden");
+    showSummarizingContext();
+    setLoadingIndicator(summaryText, randomSummarizeVerb());
+
+    jobId = `summary-${crypto.randomUUID()}`;
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
@@ -2078,6 +2063,10 @@ async function summarizeActivePage() {
           }
           return "done";
         },
+        onStreamStart: (streamId) => {
+          startedStreamId = streamId;
+          summaryStartGate.release(startToken);
+        },
       });
       if (result !== "done") return;
     }
@@ -2090,17 +2079,10 @@ async function summarizeActivePage() {
       renderSummaryError(error);
     }
   } finally {
-    isSummarizeStarting = false;
-    hideCancelSummarizeButton();
+    summaryStartGate.release(startToken);
+    summaryCancel.hide(startedStreamId);
   }
 }
-
-cancelSummarizeBtn?.addEventListener("click", () => {
-  if (!activeSummarizeStreamId) return;
-  cancelSummarizeBtn.disabled = true;
-  cancelSummarizeBtn.textContent = "Cancelling...";
-  cancelStream(activeSummarizeStreamId);
-});
 
 const EMPTY_ANSWER_MESSAGE =
   "No answer came back - try rephrasing the question.";
@@ -2143,12 +2125,15 @@ async function submitQuestion(question) {
     questionInput.focus();
     return;
   }
-  if (activeAskStreamId) {
-    cancelStream(activeAskStreamId);
-  }
-  showAnswerContext(trimmed);
-
+  const startToken = askStartGate.tryStart();
+  if (!startToken) return;
+  let startedStreamId = null;
   try {
+    if (activeAskStreamId) {
+      cancelStream(activeAskStreamId);
+    }
+    showAnswerContext(trimmed);
+
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
@@ -2214,8 +2199,12 @@ async function submitQuestion(question) {
         });
         return "done";
       },
-      showCancel: showCancelAskButton,
-      hideCancel: hideCancelAskButton,
+      onStreamStart: (streamId) => {
+        startedStreamId = streamId;
+        askStartGate.release(startToken);
+      },
+      showCancel: askCancel.show,
+      hideCancel: askCancel.hide,
       consume: (stream) =>
         consumeAnswerStream(stream, { tab, question: trimmed }),
       renderFallback: (fallbackText) =>
@@ -2229,7 +2218,8 @@ async function submitQuestion(question) {
       renderError(answerBox, toUserMessage(error));
     }
   } finally {
-    hideCancelAskButton();
+    askStartGate.release(startToken);
+    askCancel.hide(startedStreamId);
   }
 }
 
@@ -2458,10 +2448,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           currentTranslationEngine =
             state.translationEngine ?? settings.translationEngine;
           if (state.subview === "summarizing") {
+            const restoringStreamId = state.streamId;
             showOnlyView("summaryView");
             showSummarizingContext();
             setLoadingIndicator(summaryText, randomSummarizeVerb());
-            showCancelSummarizeButton(state.streamId);
+            summaryCancel.show(restoringStreamId);
             let resumeFromCompletedState = false;
             try {
               await getPageData(tab);
@@ -2504,16 +2495,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
               }
             } finally {
-              if (!stale()) hideCancelSummarizeButton();
+              if (!stale()) summaryCancel.hide(restoringStreamId);
             }
             if (stale()) return;
             if (!resumeFromCompletedState) return;
           }
 
           if (state.subview === "answer") {
+            const restoringStreamId = state.streamId;
             showOnlyView("summaryView");
             showAnswerContext(state.question || "");
-            showCancelAskButton(state.streamId);
+            askCancel.show(restoringStreamId);
             try {
               await consumeAnswerStream(
                 attachToStream(state.streamId, {
@@ -2533,7 +2525,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 await saveViewState(tab.id, { streamId: null });
               }
             } finally {
-              if (!stale()) hideCancelAskButton();
+              if (!stale()) askCancel.hide(restoringStreamId);
             }
             return;
           }
@@ -2730,26 +2722,30 @@ document.getElementById("askBtn")?.addEventListener("click", async () => {
 });
 
 async function summarizeCustomContent(title, content, url = "") {
-  if (activeSummarizeStreamId) {
-    cancelStream(activeSummarizeStreamId);
-  }
-  // Cap pasted / plain-text input up front (#211): clipboard and dialog text
-  // reach this choke point unbounded, so truncate with a note before the
-  // content fans out into chunks, cache keys, and stored history.
-  const capped = truncateWithNote(content, MAX_PASTED_CHARS, "pasted");
-  if (capped.truncated) {
-    announce(
-      "Pasted content exceeded the text limit and was truncated to the first 100,000 characters.",
-    );
-  }
-  content = capped.text;
-  currentPageData = { type: "article", content };
-  showOnlyView("summaryView");
-  showSummarizingContext();
-  setLoadingIndicator(summaryText, randomSummarizeVerb());
-
-  const jobId = `summary-${crypto.randomUUID()}`;
+  const startToken = summaryStartGate.tryStart();
+  if (!startToken) return;
+  let startedStreamId = null;
+  let jobId = null;
   try {
+    if (activeSummarizeStreamId) {
+      cancelStream(activeSummarizeStreamId);
+    }
+    // Cap pasted / plain-text input up front (#211): clipboard and dialog text
+    // reach this choke point unbounded, so truncate with a note before the
+    // content fans out into chunks, cache keys, and stored history.
+    const capped = truncateWithNote(content, MAX_PASTED_CHARS, "pasted");
+    if (capped.truncated) {
+      announce(
+        "Pasted content exceeded the text limit and was truncated to the first 100,000 characters.",
+      );
+    }
+    content = capped.text;
+    currentPageData = { type: "article", content };
+    showOnlyView("summaryView");
+    showSummarizingContext();
+    setLoadingIndicator(summaryText, randomSummarizeVerb());
+
+    jobId = `summary-${crypto.randomUUID()}`;
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
@@ -2804,6 +2800,10 @@ async function summarizeCustomContent(title, content, url = "") {
         }
         return "done";
       },
+      onStreamStart: (streamId) => {
+        startedStreamId = streamId;
+        summaryStartGate.release(startToken);
+      },
     });
   } catch (error) {
     if (error instanceof StreamCancelledError) {
@@ -2813,7 +2813,8 @@ async function summarizeCustomContent(title, content, url = "") {
       renderSummaryError(error);
     }
   } finally {
-    hideCancelSummarizeButton();
+    summaryStartGate.release(startToken);
+    summaryCancel.hide(startedStreamId);
   }
 }
 

@@ -1,67 +1,77 @@
 import test from "node:test";
 import assert from "node:assert";
-import fs from "node:fs";
 
-const appSource = fs.readFileSync(
-  new URL("../../ui/app.js", import.meta.url),
-  "utf-8",
+import { readSource, functionBody } from "../helpers/readSource.js";
+
+const appSource = readSource("../../ui/app.js", import.meta.url);
+
+const summarizeBody = functionBody(
+  appSource,
+  "summarizeActivePage",
+  "const EMPTY_ANSWER_MESSAGE",
+);
+const customBody = functionBody(
+  appSource,
+  "summarizeCustomContent",
+  'document.getElementById("pasteTextBtn")',
+);
+const askBody = functionBody(
+  appSource,
+  "submitQuestion",
+  "async function checkConnection",
 );
 
-function summarizeActivePageBody() {
-  const match = appSource.match(
-    /async function summarizeActivePage\(\) \{([\s\S]*?)\n\}\n\ncancelSummarizeBtn/,
-  );
-  assert.ok(match, "summarizeActivePage function found");
-  return match[1];
+function assertGateBeforeFirstAwait(body, gateName) {
+  const gate = body.indexOf(`${gateName}.tryStart()`);
+  const firstAwait = body.indexOf("await ");
+  assert.ok(gate >= 0, `${gateName} must guard the start`);
+  assert.ok(firstAwait > gate, `${gateName} must run before the first await`);
+  assert.match(body, /if \(!startToken\) return;/);
 }
 
-test("summarizeActivePage has a synchronous startup guard (#547)", () => {
+test("summarizeActivePage takes the shared start gate before its first await", () => {
+  assertGateBeforeFirstAwait(summarizeBody, "summaryStartGate");
   assert.match(
-    appSource,
-    /let isSummarizeStarting = false;/,
-    "must declare isSummarizeStarting state variable",
-  );
-
-  const body = summarizeActivePageBody();
-  assert.match(
-    body,
-    /if \(isSummarizeStarting\) \{\s*return;\s*\}\s*isSummarizeStarting = true;/,
-    "must synchronously check and set isSummarizeStarting before any await",
+    summarizeBody,
+    /onStreamStart: \(streamId\) => \{[\s\S]*startedStreamId = streamId;[\s\S]*summaryStartGate\.release\(startToken\);/,
   );
   assert.match(
-    body,
-    /finally \{\s*isSummarizeStarting = false;\s*hideCancelSummarizeButton\(\);/,
-    "must reset isSummarizeStarting in finally",
+    summarizeBody,
+    /summaryStartGate\.release\(startToken\);\s*summaryCancel\.hide\(startedStreamId\);/,
   );
 });
 
-test("two immediate summarize clicks only start a single job (#547)", async () => {
-  let isSummarizeStarting = false;
-  let startedJobs = 0;
-
-  async function simulateSummarize() {
-    if (isSummarizeStarting) {
-      return;
-    }
-    isSummarizeStarting = true;
-    try {
-      // Simulate asynchronous tab and page resolution
-      await new Promise((resolve) => setTimeout(resolve, 15));
-      startedJobs++;
-    } finally {
-      isSummarizeStarting = false;
-    }
-  }
-
-  // Trigger two clicks in the exact same tick
-  const run1 = simulateSummarize();
-  const run2 = simulateSummarize();
-
-  await Promise.all([run1, run2]);
-
-  assert.strictEqual(
-    startedJobs,
-    1,
-    "Second click while run is starting must do nothing",
+test("summarizeCustomContent uses the same start gate (#547)", () => {
+  assertGateBeforeFirstAwait(customBody, "summaryStartGate");
+  assert.match(
+    customBody,
+    /onStreamStart: \(streamId\) => \{[\s\S]*startedStreamId = streamId;[\s\S]*summaryStartGate\.release\(startToken\);/,
   );
+  assert.match(
+    customBody,
+    /summaryStartGate\.release\(startToken\);\s*summaryCancel\.hide\(startedStreamId\);/,
+  );
+});
+
+test("submitQuestion takes its own start gate before its first await", () => {
+  assertGateBeforeFirstAwait(askBody, "askStartGate");
+  assert.match(
+    askBody,
+    /onStreamStart: \(streamId\) => \{[\s\S]*startedStreamId = streamId;[\s\S]*askStartGate\.release\(startToken\);/,
+  );
+  assert.match(
+    askBody,
+    /askStartGate\.release\(startToken\);\s*askCancel\.hide\(startedStreamId\);/,
+  );
+});
+
+test("the old boolean guard and cancel wrappers are gone (#547)", () => {
+  assert.doesNotMatch(appSource, /isSummarizeStarting/);
+  assert.doesNotMatch(
+    appSource,
+    /showCancelSummarizeButton|hideCancelSummarizeButton/,
+  );
+  assert.doesNotMatch(appSource, /showCancelAskButton|hideCancelAskButton/);
+  assert.match(appSource, /const summaryStartGate = createJobStartGate\(\);/);
+  assert.match(appSource, /const askStartGate = createJobStartGate\(\);/);
 });
